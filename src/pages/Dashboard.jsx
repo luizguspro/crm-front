@@ -50,10 +50,26 @@ const Dashboard = () => {
         dashboardService.getChannelPerformance()
       ]);
 
-      setKpis(kpisRes.data);
-      setRecentActivities(activitiesRes.data);
-      setPerformanceData(performanceRes.data);
-      setChannelPerformance(channelRes.data);
+      console.log('KPIs recebidos:', kpisRes.data);
+      console.log('Resposta completa:', kpisRes);
+
+      // Verificar se a resposta está vindo no formato esperado
+      const responseData = kpisRes.data || kpisRes;
+      
+      // Garantir que os dados sejam números - aceitar ambos os formatos
+      const kpisData = {
+        leadsQuentes: parseInt(responseData?.leadsQuentes || responseData?.totalLeads) || 0,
+        novosLeads: parseInt(responseData?.novosLeads || responseData?.newLeadsToday) || 0,
+        visitasAgendadas: parseInt(responseData?.visitasAgendadas || responseData?.scheduledVisits) || 0,
+        taxaConversao: parseFloat(responseData?.taxaConversao || responseData?.conversionRate) || 0
+      };
+      
+      console.log('KPIs processados:', kpisData);
+
+      setKpis(kpisData);
+      setRecentActivities(activitiesRes.data || []);
+      setPerformanceData(performanceRes.data || []);
+      setChannelPerformance(channelRes.data || []);
 
     } catch (err) {
       console.error('Erro ao buscar dados:', err);
@@ -68,21 +84,25 @@ const Dashboard = () => {
     fetchDashboardData();
     
     // Inicializar WebSocket
-    const socket = initSocket();
-    
-    // Escutar atualizações em tempo real
-    socket.on('new-message', () => {
-      fetchDashboardData(); // Recarregar dados quando houver nova mensagem
-    });
+    try {
+      const socket = initSocket();
+      
+      // Escutar atualizações em tempo real
+      socket.on('new-message', () => {
+        fetchDashboardData();
+      });
 
-    socket.on('deal-updated', () => {
-      fetchDashboardData();
-    });
+      socket.on('deal-updated', () => {
+        fetchDashboardData();
+      });
 
-    return () => {
-      socket.off('new-message');
-      socket.off('deal-updated');
-    };
+      return () => {
+        socket.off('new-message');
+        socket.off('deal-updated');
+      };
+    } catch (error) {
+      console.error('Erro ao inicializar WebSocket:', error);
+    }
   }, []);
 
   // Animação dos números dos KPIs
@@ -197,20 +217,29 @@ const Dashboard = () => {
   // Função para obter ícone da atividade
   const getActivityIcon = (type) => {
     switch(type) {
-      case 'message': return MessageCircle;
-      case 'new_deal': return Users;
-      case 'deal_won': return DollarSign;
-      case 'task': return Calendar;
-      default: return Activity;
+      case 'message':
+      case 'new_lead':
+        return MessageCircle;
+      case 'new_deal':
+      case 'deal_moved':
+        return Users;
+      case 'deal_won':
+        return Trophy;
+      case 'task':
+        return Calendar;
+      default:
+        return Activity;
     }
   };
 
   const getActivityColor = (type) => {
     switch(type) {
       case 'message': return 'text-blue-600 bg-blue-100';
-      case 'new_deal': return 'text-green-600 bg-green-100';
-      case 'deal_won': return 'text-orange-600 bg-orange-100';
-      case 'task': return 'text-purple-600 bg-purple-100';
+      case 'new_lead': return 'text-green-600 bg-green-100';
+      case 'new_deal': return 'text-purple-600 bg-purple-100';
+      case 'deal_moved': return 'text-indigo-600 bg-indigo-100';
+      case 'deal_won': return 'text-yellow-600 bg-yellow-100';
+      case 'task': return 'text-pink-600 bg-pink-100';
       default: return 'text-gray-600 bg-gray-100';
     }
   };
@@ -295,7 +324,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {kpiDataIndividual.map((kpi, index) => (
             <div 
-              key={index} 
+              key={kpi.title}
               className={`${isPresentationMode ? 'bg-gray-800 border-gray-700' : `${kpi.bgColor} border-gray-100`} rounded-xl p-4 border hover:shadow-lg transition-all duration-300 hover:-translate-y-1 animate-fade-in`}
               style={{ animationDelay: `${index * 100}ms` }}
             >
@@ -345,7 +374,7 @@ const Dashboard = () => {
                   const height = maxValue > 0 ? (data.conversas / maxValue) * 100 : 0;
                   
                   return (
-                    <div key={index} className="flex-1 mx-1 relative group">
+                    <div key={`bar-${index}-${data.data}`} className="flex-1 mx-1 relative group">
                       <div 
                         className="bg-blue-500 rounded-t hover:bg-blue-600 transition-all cursor-pointer"
                         style={{ 
@@ -384,95 +413,76 @@ const Dashboard = () => {
               {recentActivities.length > 0 ? (
                 recentActivities.slice(0, 5).map((activity, index) => {
                   const Icon = getActivityIcon(activity.type);
+                  const colorClass = getActivityColor(activity.type);
+                  
                   return (
                     <div 
-                      key={activity.id} 
-                      className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer animate-slide-left"
-                      style={{ animationDelay: `${index * 100}ms` }}
+                      key={`activity-${activity.id || index}`}
+                      className="flex items-start space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                     >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${getActivityColor(activity.type)}`}>
+                      <div className={`p-2 rounded-lg ${colorClass}`}>
                         <Icon size={16} />
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-900">{activity.text}</p>
-                        <p className="text-xs text-gray-500">{formatRelativeTime(activity.time)}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {activity.title || activity.text}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {activity.description || activity.contactName}
+                        </p>
                       </div>
+                      <span className="text-xs text-gray-400 whitespace-nowrap">
+                        {activity.time || formatRelativeTime(activity.created_at)}
+                      </span>
                     </div>
                   );
                 })
               ) : (
                 <div className="text-center py-8 text-gray-400">
                   <Activity className="w-12 h-12 mx-auto mb-2" />
-                  <p className="text-sm">Nenhuma atividade ainda</p>
-                  <p className="text-xs mt-1">Conecte o WhatsApp para começar</p>
+                  <p className="text-sm">Nenhuma atividade recente</p>
                 </div>
               )}
             </div>
-            {recentActivities.length > 0 && (
-              <button className="w-full mt-4 text-sm text-blue-600 hover:text-blue-700 font-medium">
-                Ver todas atividades
-              </button>
-            )}
           </div>
         </div>
 
         {/* Performance por Canal */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 animate-fade-in" style={{ animationDelay: '300ms' }}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Leads por Canal</h2>
-            <div className="space-y-3">
-              {channelPerformance.length > 0 ? (
-                channelPerformance.map((channel, index) => (
-                  <div key={index} className="animate-slide-right" style={{ animationDelay: `${index * 100}ms` }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-700 capitalize">{channel.channel}</span>
-                      <span className="text-sm text-gray-900">{channel.leads} leads</span>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 animate-fade-in" style={{ animationDelay: '300ms' }}>
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Performance por Canal</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {channelPerformance.length > 0 ? (
+              channelPerformance.map((channel, index) => (
+                <div 
+                  key={`channel-${channel.channel}-${index}`}
+                  className="p-4 border border-gray-200 rounded-lg hover:border-blue-500 transition-colors"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium text-gray-900 capitalize">{channel.channel || 'WhatsApp'}</h3>
+                    <span className="text-xs text-gray-500">{channel.percentage || 0}%</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Mensagens</span>
+                      <span className="font-medium">{channel.messages || 0}</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-1000"
-                        style={{ 
-                          width: `${channel.percentage}%`,
-                          animation: `grow-width 1s ease-out ${index * 200}ms both`
-                        }}
-                      />
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Contatos</span>
+                      <span className="font-medium">{channel.contacts || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Conversões</span>
+                      <span className="font-medium text-green-600">{channel.conversions || 0}</span>
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-400">
-                  <Users className="w-12 h-12 mx-auto mb-2" />
-                  <p className="text-sm">Nenhum lead ainda</p>
-                  <p className="text-xs mt-1">Receba mensagens para ver estatísticas</p>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Status do Sistema */}
-          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 animate-fade-in" style={{ animationDelay: '400ms' }}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Status do Sistema</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <div className="flex items-center space-x-2">
-                  <MessageCircle className="w-5 h-5 text-green-600" />
-                  <span className="text-sm font-medium text-gray-700">WhatsApp</span>
-                </div>
-                <span className="text-sm font-bold text-green-600">Conectado</span>
+              ))
+            ) : (
+              <div className="col-span-3 text-center py-8 text-gray-400">
+                <MessageCircle className="w-12 h-12 mx-auto mb-2" />
+                <p className="text-sm">Nenhum dado de canal disponível</p>
               </div>
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div className="flex items-center space-x-2">
-                  <Zap className="w-5 h-5 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">Bot IA</span>
-                </div>
-                <span className="text-sm font-bold text-blue-600">Ativo</span>
-              </div>
-            </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-              <p className="text-xs text-gray-600">
-                Última sincronização: {new Date().toLocaleTimeString('pt-BR')}
-              </p>
-            </div>
+            )}
           </div>
         </div>
       </div>
