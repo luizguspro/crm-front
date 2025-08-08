@@ -54,7 +54,7 @@ const Settings = () => {
                   </label>
                   <input
                     type="text"
-                    defaultValue="Ana Silva"
+                    defaultValue="Garcez Appi"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -65,7 +65,7 @@ const Settings = () => {
                   </label>
                   <input
                     type="email"
-                    defaultValue="ana.silva@mayacrm.com"
+                    defaultValue="garcez@zapvibe.com"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -87,7 +87,7 @@ const Settings = () => {
                   </label>
                   <input
                     type="text"
-                    defaultValue="Gerente de Vendas"
+                    defaultValue="Diretor Comercial"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -117,7 +117,7 @@ const Settings = () => {
                   </label>
                   <input
                     type="text"
-                    defaultValue="Maya CRM"
+                    defaultValue="ZapVibe"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>

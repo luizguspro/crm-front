@@ -1,8 +1,8 @@
 // src/data/mockData.js
 export const mockUser = {
-  name: "Ana Silva",
-  email: "ana.silva@empresa.com",
-  company: "Tech Solutions"
+  name: "Garcez Appi",
+  email: "garcez@ZapVibe.com",
+  company: "Gestor"
 };
 
 export const mockKpis = {

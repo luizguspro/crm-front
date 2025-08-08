@@ -6,9 +6,12 @@ import {
   Archive, Star, Trash2, RefreshCw, AlertCircle, User,
   Calendar, Tag, ChevronDown, X, Instagram, Facebook
 } from 'lucide-react';
+import { useDemo } from '../contexts/DemoContext';
+import apiMock from '../services/apiMock';
 import { conversationService } from '../services/api';
 
 const Conversations = () => {
+  const { isDemoMode, mockDataService } = useDemo();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -24,10 +27,23 @@ const Conversations = () => {
       setIsLoading(true);
       setError(null);
       
-      const response = await conversationService.getAll({
-        search: searchTerm,
-        status: filterStatus !== 'all' ? filterStatus : undefined
-      });
+      let response;
+      if (isDemoMode) {
+        response = await apiMock.getConversations({
+          search: searchTerm,
+          status: filterStatus !== 'all' ? filterStatus : undefined
+        });
+      } else {
+        try {
+          response = await conversationService.getAll({
+            search: searchTerm,
+            status: filterStatus !== 'all' ? filterStatus : undefined
+          });
+        } catch (err) {
+          // Se falhar, usar dados vazios
+          response = { data: [] };
+        }
+      }
       
       setConversations(response.data || []);
     } catch (err) {
@@ -40,17 +56,33 @@ const Conversations = () => {
 
   useEffect(() => {
     fetchConversations();
-  }, [searchTerm, filterStatus]);
+  }, [searchTerm, filterStatus, isDemoMode]);
 
   // Buscar mensagens de uma conversa
   const fetchMessages = async (conversationId) => {
     try {
-      const response = await conversationService.getById(conversationId);
+      let response;
+      if (isDemoMode) {
+        response = await apiMock.getConversationById(conversationId);
+      } else {
+        try {
+          response = await conversationService.getById(conversationId);
+        } catch (err) {
+          response = { data: { mensagens: [] } };
+        }
+      }
+      
       setMessages(response.data.mensagens || []);
       setSelectedConversation(response.data);
       
       // Marcar como lida
-      await conversationService.markAsRead(conversationId);
+      if (!isDemoMode) {
+        try {
+          await conversationService.markAsRead(conversationId);
+        } catch (err) {
+          console.log('Erro ao marcar como lida');
+        }
+      }
     } catch (err) {
       console.error('Erro ao buscar mensagens:', err);
     }
@@ -61,10 +93,21 @@ const Conversations = () => {
     if (!newMessage.trim() || !selectedConversation) return;
 
     try {
-      await conversationService.sendMessage(selectedConversation.id, {
-        conteudo: newMessage,
-        tipo: 'texto'
-      });
+      if (isDemoMode) {
+        await apiMock.sendMessage(selectedConversation.id, {
+          conteudo: newMessage,
+          tipo: 'texto'
+        });
+      } else {
+        try {
+          await conversationService.sendMessage(selectedConversation.id, {
+            conteudo: newMessage,
+            tipo: 'texto'
+          });
+        } catch (err) {
+          console.log('Erro ao enviar mensagem');
+        }
+      }
       
       setNewMessage('');
       // Recarregar mensagens
@@ -74,8 +117,36 @@ const Conversations = () => {
     }
   };
 
+  // Atualizar em tempo real no modo demo
+  useEffect(() => {
+    if (isDemoMode && mockDataService) {
+      const handleNewMessage = () => {
+        fetchConversations();
+        if (selectedConversation) {
+          fetchMessages(selectedConversation.id);
+        }
+      };
+
+      mockDataService.on('new-message', handleNewMessage);
+
+      // Atualizar periodicamente
+      const interval = setInterval(() => {
+        fetchConversations();
+      }, 5000);
+
+      return () => {
+        mockDataService.off('new-message', handleNewMessage);
+        clearInterval(interval);
+      };
+    }
+  }, [isDemoMode, selectedConversation]);
+
   // Formatar hora
   const formatTime = (date) => {
+    if (typeof date === 'string' && !date.includes('-')) {
+      return date; // Já formatado como "5 min", "1h", etc
+    }
+    
     const d = new Date(date);
     const now = new Date();
     const diff = now - d;
@@ -185,6 +256,9 @@ const Conversations = () => {
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <MessageSquare className="w-12 h-12 mb-2" />
               <p>Nenhuma conversa encontrada</p>
+              {isDemoMode && (
+                <p className="text-sm mt-2 text-blue-600">Aguarde, novas mensagens chegarão em breve!</p>
+              )}
             </div>
           ) : (
             conversations.map((conv) => (
@@ -268,26 +342,26 @@ const Conversations = () => {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex ${msg.remetente_tipo === 'bot' ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${msg.remetente_tipo === 'bot' || msg.remetente_tipo === 'atendente' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
                   className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                    msg.remetente_tipo === 'bot'
+                    msg.remetente_tipo === 'bot' || msg.remetente_tipo === 'atendente'
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-200 text-gray-900'
                   }`}
                 >
                   <p className="text-sm">{msg.conteudo}</p>
                   <div className={`flex items-center justify-end mt-1 space-x-1 ${
-                    msg.remetente_tipo === 'bot' ? 'text-blue-100' : 'text-gray-500'
+                    msg.remetente_tipo === 'bot' || msg.remetente_tipo === 'atendente' ? 'text-blue-100' : 'text-gray-500'
                   }`}>
                     <span className="text-xs">
-                      {new Date(msg.criado_em).toLocaleTimeString('pt-BR', {
+                      {msg.criado_em ? new Date(msg.criado_em).toLocaleTimeString('pt-BR', {
                         hour: '2-digit',
                         minute: '2-digit'
-                      })}
+                      }) : ''}
                     </span>
-                    {msg.remetente_tipo === 'bot' && (
+                    {(msg.remetente_tipo === 'bot' || msg.remetente_tipo === 'atendente') && (
                       msg.lida ? <CheckCheck className="w-4 h-4" /> : <Check className="w-4 h-4" />
                     )}
                   </div>
@@ -335,6 +409,11 @@ const Conversations = () => {
             <p className="text-gray-500">
               Escolha uma conversa da lista para começar
             </p>
+            {isDemoMode && (
+              <p className="text-sm mt-4 text-blue-600">
+                💡 Dica: No modo demo, novas mensagens chegam automaticamente!
+              </p>
+            )}
           </div>
         </div>
       )}

@@ -44,7 +44,7 @@ const MainLayout = () => {
               <div className={`flex items-center ${!sidebarOpen && 'justify-center'}`}>
                 <Building2 className="w-8 h-8 text-blue-600" />
                 {sidebarOpen && (
-                  <span className="ml-2 text-xl font-bold text-gray-800">Maya CRM</span>
+                  <span className="ml-2 text-xl font-bold text-gray-800">ZapVibe</span>
                 )}
               </div>
               <button

@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 
 // Configuração base do axios
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -15,7 +15,7 @@ let socket = null;
 
 export const initSocket = () => {
   if (!socket) {
-    socket = io('http://localhost:3001', {
+    socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001', {
       transports: ['websocket'],
     });
 

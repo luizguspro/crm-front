@@ -1,12 +1,16 @@
+// src/pages/AutomationSettings.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   Zap, Play, Pause, Settings, Clock, CheckCircle, AlertCircle,
   RefreshCw, History, ToggleLeft, ToggleRight, Save, Info,
   TrendingUp, Users, Calendar, X, ArrowRight
 } from 'lucide-react';
+import { useDemo } from '../contexts/DemoContext';
+import apiMock from '../services/apiMock';
 import { automationService } from '../services/api';
 
 const AutomationSettings = () => {
+  const { isDemoMode, mockDataService } = useDemo();
   const [isRunning, setIsRunning] = useState(false);
   const [flows, setFlows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -19,13 +23,46 @@ const AutomationSettings = () => {
     try {
       setIsLoading(true);
       
-      // Buscar status
-      const statusResponse = await automationService.getStatus();
-      setIsRunning(statusResponse.data.isRunning);
+      if (isDemoMode) {
+        // Buscar status
+        const statusResponse = await apiMock.getAutomationStatus();
+        setIsRunning(statusResponse.data.isRunning);
 
-      // Buscar fluxos
-      const flowsResponse = await automationService.getFlows();
-      setFlows(flowsResponse.data);
+        // Buscar fluxos
+        const flowsResponse = await apiMock.getAutomationFlows();
+        setFlows(flowsResponse.data);
+      } else {
+        try {
+          // Buscar status
+          const statusResponse = await automationService.getStatus();
+          setIsRunning(statusResponse.data.isRunning);
+
+          // Buscar fluxos
+          const flowsResponse = await automationService.getFlows();
+          setFlows(flowsResponse.data);
+        } catch (err) {
+          // Se falhar, usar dados default
+          setIsRunning(false);
+          setFlows([
+            {
+              id: 'auto-qualify-hot',
+              nome: 'Qualificar Leads Quentes',
+              descricao: 'Move leads com score alto para qualificados',
+              ativo: false,
+              gatilho: 'Score > 80',
+              regras: { score_minimo: 80 }
+            },
+            {
+              id: 'auto-cadence',
+              nome: 'Cadência de Follow-up',
+              descricao: 'Envia mensagens automáticas de follow-up',
+              ativo: false,
+              gatilho: 'Sem resposta há 24h',
+              regras: { tempo_sem_resposta: 24 }
+            }
+          ]);
+        }
+      }
 
     } catch (error) {
       console.error('Erro ao buscar dados:', error);
@@ -36,17 +73,43 @@ const AutomationSettings = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [isDemoMode]);
+
+  // Atualizar em tempo real no modo demo
+  useEffect(() => {
+    if (isDemoMode && mockDataService) {
+      // No modo demo, simular automações rodando
+      const interval = setInterval(() => {
+        setLastExecution(new Date());
+      }, 30000); // Atualizar a cada 30 segundos
+
+      return () => clearInterval(interval);
+    }
+  }, [isDemoMode]);
 
   // Controlar automação
   const toggleAutomation = async () => {
     try {
-      if (isRunning) {
-        await automationService.stop();
-        setIsRunning(false);
+      if (isDemoMode) {
+        if (isRunning) {
+          await apiMock.stopAutomation();
+          setIsRunning(false);
+        } else {
+          await apiMock.startAutomation();
+          setIsRunning(true);
+        }
       } else {
-        await automationService.start();
-        setIsRunning(true);
+        try {
+          if (isRunning) {
+            await automationService.stop();
+            setIsRunning(false);
+          } else {
+            await automationService.start();
+            setIsRunning(true);
+          }
+        } catch (err) {
+          console.log('Erro ao controlar automação');
+        }
       }
     } catch (error) {
       console.error('Erro ao controlar automação:', error);
@@ -56,8 +119,18 @@ const AutomationSettings = () => {
   // Executar agora
   const runNow = async () => {
     try {
-      await automationService.runNow();
       setLastExecution(new Date());
+      
+      if (isDemoMode) {
+        // No modo demo, apenas simular
+        alert('Automações executadas com sucesso no modo demo!');
+      } else {
+        try {
+          await automationService.runNow();
+        } catch (err) {
+          console.log('Erro ao executar automação');
+        }
+      }
     } catch (error) {
       console.error('Erro ao executar automação:', error);
     }
@@ -67,12 +140,24 @@ const AutomationSettings = () => {
   const saveFlowConfig = async (flowId, config) => {
     try {
       setIsSaving(true);
-      await automationService.updateFlow(flowId, config);
       
-      // Atualizar estado local
-      setFlows(flows.map(f => 
-        f.id === flowId ? { ...f, ...config } : f
-      ));
+      if (isDemoMode) {
+        // No modo demo, apenas atualizar localmente
+        setFlows(flows.map(f => 
+          f.id === flowId ? { ...f, ...config } : f
+        ));
+      } else {
+        try {
+          await automationService.updateFlow(flowId, config);
+          
+          // Atualizar estado local
+          setFlows(flows.map(f => 
+            f.id === flowId ? { ...f, ...config } : f
+          ));
+        } catch (err) {
+          console.log('Erro ao salvar configuração');
+        }
+      }
       
       setSelectedFlow(null);
     } catch (error) {
@@ -180,6 +265,11 @@ const AutomationSettings = () => {
                 <li>Você pode executar manualmente a qualquer momento</li>
                 <li>Todas as movimentações são registradas no histórico</li>
               </ul>
+              {isDemoMode && (
+                <p className="mt-2 text-blue-600 font-medium">
+                  💡 No modo demo, as automações funcionam simuladamente com os dados gerados!
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -249,6 +339,16 @@ const AutomationSettings = () => {
                   </div>
                 )}
 
+                {/* Status de execução no modo demo */}
+                {isDemoMode && flow.ativo && (
+                  <div className="mt-4 p-3 bg-green-50 rounded-lg">
+                    <div className="flex items-center text-sm text-green-700">
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      <span>Executando automaticamente</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Botão de configuração */}
                 <button
                   onClick={() => setSelectedFlow(flow)}
@@ -268,8 +368,36 @@ const AutomationSettings = () => {
             <div className="flex items-center">
               <History className="w-5 h-5 text-gray-600 mr-2" />
               <span className="text-sm text-gray-700">
-                Última execução manual: {new Date(lastExecution).toLocaleString('pt-BR')}
+                Última execução: {new Date(lastExecution).toLocaleString('pt-BR')}
               </span>
+              {isDemoMode && (
+                <span className="ml-2 text-sm text-blue-600">
+                  (Modo Demo - Execução Simulada)
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Info adicional no modo demo */}
+        {isDemoMode && (
+          <div className="mt-8 bg-purple-50 border border-purple-200 rounded-lg p-6">
+            <div className="flex items-start">
+              <Zap className="w-6 h-6 text-purple-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-purple-900 mb-2">
+                  Automações em Modo Demo
+                </h3>
+                <p className="text-sm text-purple-700 mb-3">
+                  No modo demo, as automações estão funcionando com dados simulados:
+                </p>
+                <ul className="text-sm text-purple-700 space-y-1 list-disc list-inside">
+                  <li>Leads com score alto são automaticamente qualificados</li>
+                  <li>Mensagens de follow-up são simuladas</li>
+                  <li>Negócios são movidos no pipeline baseado em regras</li>
+                  <li>Todas as ações são registradas em tempo real</li>
+                </ul>
+              </div>
             </div>
           </div>
         )}
@@ -373,6 +501,14 @@ const AutomationSettings = () => {
                       />
                     </div>
                   )}
+                </div>
+              )}
+
+              {isDemoMode && (
+                <div className="p-3 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    💡 No modo demo, as configurações são aplicadas aos dados simulados imediatamente.
+                  </p>
                 </div>
               )}
             </div>

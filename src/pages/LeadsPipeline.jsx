@@ -7,9 +7,12 @@ import {
   Check, X, AlertCircle, TrendingUp, Zap, Instagram, Facebook,
   MessageCircle, ListTodo, Trash2, Edit, RefreshCw, Users
 } from 'lucide-react';
+import { useDemo } from '../contexts/DemoContext';
+import apiMock from '../services/apiMock';
 import { pipelineService } from '../services/api';
 
 const LeadsPipeline = () => {
+  const { isDemoMode, mockDataService } = useDemo();
   const [selectedLead, setSelectedLead] = useState(null);
   const [activeTab, setActiveTab] = useState('activity');
   const [draggedLead, setDraggedLead] = useState(null);
@@ -27,8 +30,27 @@ const LeadsPipeline = () => {
       setIsLoading(true);
       setError(null);
       
-      const response = await pipelineService.getDeals();
-      setPipeline(response.data);
+      let response;
+      if (isDemoMode) {
+        response = await apiMock.getPipelineDeals();
+      } else {
+        try {
+          response = await pipelineService.getDeals();
+        } catch (err) {
+          // Se falhar, usar estrutura vazia
+          response = { 
+            data: [
+              { id: 'new', title: 'Novos Leads', color: 'bg-blue-500', description: 'Leads recém chegados', leads: [] },
+              { id: 'qualified', title: 'Qualificados', color: 'bg-purple-500', description: 'Leads com potencial confirmado', leads: [] },
+              { id: 'proposal', title: 'Proposta', color: 'bg-amber-500', description: 'Proposta enviada', leads: [] },
+              { id: 'negotiation', title: 'Negociação', color: 'bg-orange-500', description: 'Em negociação final', leads: [] },
+              { id: 'won', title: 'Ganhos', color: 'bg-green-500', description: 'Negócios fechados', leads: [] }
+            ]
+          };
+        }
+      }
+      
+      setPipeline(response.data || []);
       
     } catch (err) {
       console.error('Erro ao buscar pipeline:', err);
@@ -40,7 +62,30 @@ const LeadsPipeline = () => {
 
   useEffect(() => {
     fetchPipeline();
-  }, []);
+  }, [isDemoMode]);
+
+  // Atualizar em tempo real no modo demo
+  useEffect(() => {
+    if (isDemoMode && mockDataService) {
+      const handleDealUpdate = () => {
+        fetchPipeline();
+      };
+
+      mockDataService.on('deal-moved', handleDealUpdate);
+      mockDataService.on('new-lead', handleDealUpdate);
+
+      // Atualizar periodicamente
+      const interval = setInterval(() => {
+        fetchPipeline();
+      }, 8000);
+
+      return () => {
+        mockDataService.off('deal-moved', handleDealUpdate);
+        mockDataService.off('new-lead', handleDealUpdate);
+        clearInterval(interval);
+      };
+    }
+  }, [isDemoMode]);
 
   const getChannelIcon = (channel) => {
     switch(channel) {
@@ -65,8 +110,15 @@ const LeadsPipeline = () => {
     e.preventDefault();
     if (draggedLead && draggedLead.stageId !== targetStageId) {
       try {
-        // Chamar API para mover o negócio
-        await pipelineService.moveDeal(draggedLead.lead.id, targetStageId);
+        if (isDemoMode) {
+          await apiMock.moveDeal(draggedLead.lead.id, targetStageId);
+        } else {
+          try {
+            await pipelineService.moveDeal(draggedLead.lead.id, targetStageId);
+          } catch (err) {
+            console.log('Erro ao mover deal');
+          }
+        }
         
         // Atualizar o estado local
         const newPipeline = pipeline.map(stage => {
@@ -102,7 +154,7 @@ const LeadsPipeline = () => {
   };
 
   const totalValue = pipeline.reduce((sum, stage) => 
-    sum + stage.leads.reduce((stageSum, lead) => stageSum + lead.value, 0), 0
+    sum + stage.leads.reduce((stageSum, lead) => stageSum + (lead.value || 0), 0), 0
   );
 
   if (isLoading) {
@@ -145,7 +197,9 @@ const LeadsPipeline = () => {
               <p className="text-sm text-gray-500">
                 {totalValue > 0 
                   ? `Valor total: R$ ${totalValue.toLocaleString('pt-BR')}`
-                  : 'Nenhum negócio em andamento'
+                  : isDemoMode 
+                    ? 'Aguarde, novos negócios estão chegando...'
+                    : 'Nenhum negócio em andamento'
                 }
               </p>
             </div>
@@ -263,7 +317,7 @@ const LeadsPipeline = () => {
 
                           <div className="flex items-center justify-between mb-3">
                             <span className="text-lg font-semibold text-gray-900">
-                              R$ {lead.value.toLocaleString('pt-BR')}
+                              R$ {(lead.value || 0).toLocaleString('pt-BR')}
                             </span>
                             <div className="flex items-center space-x-1">
                               <Star className="w-4 h-4 text-yellow-500 fill-current" />
@@ -272,7 +326,7 @@ const LeadsPipeline = () => {
                           </div>
 
                           <div className="flex flex-wrap gap-2 mb-3">
-                            {lead.tags.map((tag, index) => (
+                            {lead.tags?.map((tag, index) => (
                               <span
                                 key={index}
                                 className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full"
@@ -295,6 +349,11 @@ const LeadsPipeline = () => {
                       <div className="text-center py-8 text-gray-400">
                         <Users className="w-12 h-12 mx-auto mb-2" />
                         <p className="text-sm">Nenhum negócio nesta etapa</p>
+                        {isDemoMode && stage.id === 'new' && (
+                          <p className="text-xs mt-2 text-blue-600">
+                            Novos leads chegam automaticamente!
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -314,8 +373,17 @@ const LeadsPipeline = () => {
               <div className="text-center">
                 <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h2 className="text-xl font-semibold text-gray-700 mb-2">Nenhum negócio no pipeline</h2>
-                <p className="text-gray-500 mb-4">Comece recebendo mensagens no WhatsApp</p>
-                <p className="text-sm text-gray-400">Os leads aparecerão aqui automaticamente</p>
+                {isDemoMode ? (
+                  <div>
+                    <p className="text-gray-500 mb-2">Aguarde um momento...</p>
+                    <p className="text-sm text-blue-600">Novos leads estão sendo gerados automaticamente!</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-gray-500 mb-4">Comece recebendo mensagens no WhatsApp</p>
+                    <p className="text-sm text-gray-400">Os leads aparecerão aqui automaticamente</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -354,7 +422,7 @@ const LeadsPipeline = () => {
               <div className="flex items-center space-x-3">
                 <DollarSign className="text-gray-400" size={18} />
                 <span className="text-lg font-semibold text-gray-900">
-                  R$ {selectedLead.value.toLocaleString('pt-BR')}
+                  R$ {(selectedLead.value || 0).toLocaleString('pt-BR')}
                 </span>
               </div>
               <div className="flex items-center space-x-3">
@@ -364,7 +432,7 @@ const LeadsPipeline = () => {
             </div>
 
             <div className="flex flex-wrap gap-2 mt-4">
-              {selectedLead.tags.map((tag, index) => (
+              {selectedLead.tags?.map((tag, index) => (
                 <span
                   key={index}
                   className="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-full"

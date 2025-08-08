@@ -71,8 +71,8 @@ const LoginScreen = () => {
               <Building2 className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-white">MAYA CRM</h1>
-              <p className="text-blue-400 text-sm">Enterprise Solution</p>
+              <h1 className="text-3xl font-bold text-white">ZapVibe</h1>
+              <p className="text-blue-400 text-sm">Ping. Pum. Vendeu</p>
             </div>
           </div>
 
@@ -116,7 +116,7 @@ const LoginScreen = () => {
           
           <div className="border-t border-gray-700 pt-6">
             <p className="text-gray-500 text-sm">
-              © 2025 Maya CRM. Todos os direitos reservados.
+              © 2025 ZapVibe. Todos os direitos reservados.
             </p>
           </div>
         </div>
@@ -132,8 +132,8 @@ const LoginScreen = () => {
                 <Building2 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">MAYA CRM</h1>
-                <p className="text-blue-600 text-[10px] sm:text-xs">Enterprise Solution</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">ZapVibe</h1>
+                <p className="text-blue-600 text-[10px] sm:text-xs">Ping. Pum. Vendeu</p>
               </div>
             </div>
           </div>
@@ -260,7 +260,7 @@ const LoginScreen = () => {
           {/* CTA */}
           <div className="text-center">
             <p className="text-sm sm:text-base text-gray-600 mb-3 sm:mb-4">
-              Descubra como o Maya CRM pode transformar suas vendas
+              Descubra como o ZapVibe pode transformar suas vendas
             </p>
             <a
               href="#"

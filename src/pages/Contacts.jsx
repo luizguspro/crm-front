@@ -5,11 +5,14 @@ import {
   Phone, Mail, MessageCircle, Calendar, Tag, MapPin, Building2,
   Edit2, Trash2, X, Check, ChevronDown, Settings, FileSpreadsheet,
   PlusCircle, Save, Eye, EyeOff, Hash, Type, DollarSign, CalendarDays,
-  ToggleLeft, Link2, List, RefreshCw, AlertCircle
+  ToggleLeft, Link2, List, RefreshCw, AlertCircle, User
 } from 'lucide-react';
+import { useDemo } from '../contexts/DemoContext';
+import apiMock from '../services/apiMock';
 import { contactsService } from '../services/api';
 
 const Contacts = () => {
+  const { isDemoMode, mockDataService } = useDemo();
   const [selectedContact, setSelectedContact] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -42,10 +45,23 @@ const Contacts = () => {
       setIsLoading(true);
       setError(null);
 
-      const response = await contactsService.getAll({
-        search: searchTerm,
-        page: currentPage
-      });
+      let response;
+      if (isDemoMode) {
+        response = await apiMock.getContacts({
+          search: searchTerm,
+          page: currentPage
+        });
+      } else {
+        try {
+          response = await contactsService.getAll({
+            search: searchTerm,
+            page: currentPage
+          });
+        } catch (err) {
+          // Se falhar, usar dados vazios
+          response = { data: { contatos: [], total: 0 } };
+        }
+      }
 
       setContacts(response.data.contatos || []);
       setTotalContacts(response.data.total || 0);
@@ -60,7 +76,34 @@ const Contacts = () => {
 
   useEffect(() => {
     fetchContacts();
-  }, [searchTerm, currentPage]);
+  }, [searchTerm, currentPage, isDemoMode]);
+
+  // Atualizar em tempo real no modo demo
+  useEffect(() => {
+    if (isDemoMode && mockDataService) {
+      const handleNewLead = () => {
+        fetchContacts();
+      };
+
+      const handleScoreUpdate = () => {
+        fetchContacts();
+      };
+
+      mockDataService.on('new-lead', handleNewLead);
+      mockDataService.on('hot-lead', handleScoreUpdate);
+
+      // Atualizar periodicamente
+      const interval = setInterval(() => {
+        fetchContacts();
+      }, 10000);
+
+      return () => {
+        mockDataService.off('new-lead', handleNewLead);
+        mockDataService.off('hot-lead', handleScoreUpdate);
+        clearInterval(interval);
+      };
+    }
+  }, [isDemoMode]);
 
   // Tags disponíveis (simplificado)
   const availableTags = ['Cliente VIP', 'Prospect', 'Lead Frio', 'Em Negociação', 'Quente', 'WhatsApp', 'Instagram'];
@@ -73,7 +116,15 @@ const Contacts = () => {
         return;
       }
 
-      await contactsService.create(newContact);
+      if (isDemoMode) {
+        await apiMock.createContact(newContact);
+      } else {
+        try {
+          await contactsService.create(newContact);
+        } catch (err) {
+          console.log('Erro ao criar contato');
+        }
+      }
       
       setShowCreateModal(false);
       setNewContact({
@@ -93,10 +144,53 @@ const Contacts = () => {
     }
   };
 
+  // Deletar contato
+  const handleDeleteContact = async (id) => {
+    if (!window.confirm('Tem certeza que deseja excluir este contato?')) return;
+    
+    try {
+      if (isDemoMode) {
+        await apiMock.deleteContact(id);
+      } else {
+        try {
+          await contactsService.delete(id);
+        } catch (err) {
+          console.log('Erro ao deletar contato');
+        }
+      }
+      
+      if (selectedContact?.id === id) {
+        setSelectedContact(null);
+      }
+      fetchContacts();
+    } catch (err) {
+      alert('Erro ao excluir contato');
+    }
+  };
+
   // Importar contatos
   const handleImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
+
+    if (isDemoMode) {
+      // No modo demo, apenas simular importação
+      setUploadProgress({ status: 'uploading', message: 'Simulando importação...' });
+      
+      setTimeout(() => {
+        setUploadProgress({
+          status: 'success',
+          message: `Importação simulada! No modo demo, use o botão de criar contato.`,
+        });
+        
+        setTimeout(() => {
+          setShowImportModal(false);
+          setUploadProgress(null);
+        }, 3000);
+      }, 2000);
+      
+      return;
+    }
 
     const formData = new FormData();
     formData.append('file', file);
@@ -130,6 +224,19 @@ const Contacts = () => {
 
   // Exportar contatos
   const handleExport = async () => {
+    if (isDemoMode) {
+      // No modo demo, criar um CSV com os dados mock
+      const csvContent = "Nome,Email,Telefone,Empresa,Score\n" + 
+        contacts.map(c => `${c.nome},${c.email || ''},${c.telefone || ''},${c.empresa || ''},${c.score || 0}`).join('\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `contatos_demo_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      return;
+    }
+
     try {
       const response = await contactsService.export();
       
@@ -147,18 +254,14 @@ const Contacts = () => {
 
   // Baixar template
   const handleDownloadTemplate = async () => {
-    try {
-      const response = await contactsService.getTemplate();
-      
-      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = 'template_contatos.csv';
-      link.click();
-      
-    } catch (err) {
-      alert('Erro ao baixar template');
-    }
+    const templateContent = "Nome,Email,Telefone,WhatsApp,Empresa,Cargo,CPF/CNPJ\n" +
+      "João Silva,joao@exemplo.com,(11) 98765-4321,(11) 98765-4321,Empresa ABC,Diretor,123.456.789-00";
+    
+    const blob = new Blob([templateContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'template_contatos.csv';
+    link.click();
   };
 
   const filteredContacts = contacts; // Já vem filtrado da API
@@ -185,7 +288,9 @@ const Contacts = () => {
               <p className="text-sm text-gray-500">
                 {totalContacts > 0 
                   ? `${totalContacts} contatos encontrados`
-                  : 'Nenhum contato ainda'
+                  : isDemoMode
+                    ? 'Aguarde, contatos estão sendo gerados...'
+                    : 'Nenhum contato ainda'
                 }
               </p>
             </div>
@@ -275,7 +380,7 @@ const Contacts = () => {
                         <td className="px-4 py-3">
                           <div className="flex items-center space-x-3">
                             <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                              {contact.nome.charAt(0).toUpperCase()}
+                              {contact.nome?.charAt(0).toUpperCase() || 'C'}
                             </div>
                             <div>
                               <p className="font-medium text-gray-900">{contact.nome}</p>
@@ -301,7 +406,7 @@ const Contacts = () => {
                           <div className="flex items-center space-x-2">
                             <div className="flex-1 max-w-[100px]">
                               <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-medium text-gray-700">{contact.score}</span>
+                                <span className="text-xs font-medium text-gray-700">{contact.score || 0}</span>
                                 <span className="text-xs text-gray-500">Score</span>
                               </div>
                               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -311,14 +416,14 @@ const Contacts = () => {
                                     contact.score >= 60 ? 'bg-yellow-500' : 
                                     'bg-red-500'
                                   }`}
-                                  style={{ width: `${contact.score}%` }}
+                                  style={{ width: `${contact.score || 0}%` }}
                                 />
                               </div>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">
-                          {contact.ultimoContato}
+                          {contact.ultimoContato || '-'}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end space-x-1">
@@ -349,6 +454,15 @@ const Contacts = () => {
                             >
                               <MessageCircle size={16} />
                             </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteContact(contact.id);
+                              }}
+                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -359,26 +473,62 @@ const Contacts = () => {
                 <div className="text-center py-12">
                   <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-700 mb-2">Nenhum contato encontrado</h3>
-                  <p className="text-gray-500 mb-4">Comece importando uma lista ou criando manualmente</p>
-                  <div className="flex items-center justify-center space-x-3">
-                    <button
-                      onClick={() => setShowImportModal(true)}
-                      className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-                    >
-                      <Upload size={18} className="inline mr-2" />
-                      Importar CSV
-                    </button>
-                    <button
-                      onClick={() => setShowCreateModal(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      <Plus size={18} className="inline mr-2" />
-                      Criar Contato
-                    </button>
-                  </div>
+                  {isDemoMode ? (
+                    <div>
+                      <p className="text-gray-500 mb-2">Os contatos estão sendo gerados...</p>
+                      <p className="text-sm text-blue-600">Aguarde alguns segundos!</p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-gray-500 mb-4">Comece importando uma lista ou criando manualmente</p>
+                      <div className="flex items-center justify-center space-x-3">
+                        <button
+                          onClick={() => setShowImportModal(true)}
+                          className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          <Upload size={18} className="inline mr-2" />
+                          Importar CSV
+                        </button>
+                        <button
+                          onClick={() => setShowCreateModal(true)}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        >
+                          <Plus size={18} className="inline mr-2" />
+                          Criar Contato
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Paginação */}
+            {totalContacts > 20 && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-700">
+                    Mostrando {Math.min((currentPage - 1) * 20 + 1, totalContacts)} a {Math.min(currentPage * 20, totalContacts)} de {totalContacts} contatos
+                  </p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(currentPage + 1)}
+                      disabled={currentPage * 20 >= totalContacts}
+                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Próximo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Detalhes do Contato */}
@@ -387,7 +537,7 @@ const Contacts = () => {
               <div className="flex items-start justify-between mb-6">
                 <div className="flex items-center space-x-3">
                   <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-semibold">
-                    {selectedContact.nome.charAt(0).toUpperCase()}
+                    {selectedContact.nome?.charAt(0).toUpperCase() || 'C'}
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">{selectedContact.nome}</h2>
@@ -464,6 +614,22 @@ const Contacts = () => {
                       </span>
                     </div>
                   )}
+                  <div className="flex justify-between items-start">
+                    <span className="text-sm text-gray-600">Score:</span>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-20 bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full ${
+                            selectedContact.score >= 80 ? 'bg-green-500' : 
+                            selectedContact.score >= 60 ? 'bg-yellow-500' : 
+                            'bg-red-500'
+                          }`}
+                          style={{ width: `${selectedContact.score || 0}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-gray-900">{selectedContact.score || 0}%</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -522,6 +688,13 @@ const Contacts = () => {
                     Faça upload de um arquivo CSV com seus contatos. 
                     O arquivo deve conter colunas para Nome, Email, Telefone e Empresa.
                   </p>
+                  {isDemoMode && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <p className="text-sm text-blue-700">
+                        💡 No modo demo, a importação é simulada. Use o botão "Criar Contato" para adicionar contatos manualmente.
+                      </p>
+                    </div>
+                  )}
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
                     <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 text-gray-400" />
                     <label className="cursor-pointer">
