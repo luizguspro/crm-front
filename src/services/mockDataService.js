@@ -17,7 +17,8 @@ class MockDataService {
         novosLeads: 0,
         visitasAgendadas: 0,
         taxaConversao: 0
-      }
+      },
+      performanceData: [] // Adicionar aqui para persistir
     };
     
     // Inicializar com alguns dados base
@@ -37,6 +38,9 @@ class MockDataService {
     
     // Criar atividades iniciais
     this.mockData.activities = this.generateActivities(10);
+    
+    // Gerar dados de performance inicial
+    this.mockData.performanceData = this.generatePerformanceData();
     
     // Definir KPIs iniciais
     this.mockData.kpis = {
@@ -210,45 +214,75 @@ class MockDataService {
     return activities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }
 
-  // Gerar dados de performance
+  // CORRIGIDO: Gerar dados de performance com valores reais
   generatePerformanceData() {
     const data = [];
+    
+    // Gerar dados para os últimos 10 dias
     for (let i = 9; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
+      
+      // Gerar valores variados para parecer mais realista
+      const baseConversas = 30;
+      const baseLeads = 15;
+      const baseVendas = 5;
+      
+      // Adicionar variação aleatória
+      const conversas = baseConversas + faker.number.int({ min: -20, max: 30 });
+      const leads = baseLeads + faker.number.int({ min: -10, max: 20 });
+      const vendas = baseVendas + faker.number.int({ min: -3, max: 8 });
+      
       data.push({
         data: date.toISOString().split('T')[0],
-        conversas: faker.number.int({ min: 10, max: 50 }),
-        leads: faker.number.int({ min: 5, max: 20 }),
-        vendas: faker.number.int({ min: 1, max: 10 })
+        conversas: Math.max(10, conversas), // Mínimo de 10
+        leads: Math.max(5, leads), // Mínimo de 5
+        vendas: Math.max(1, vendas), // Mínimo de 1
+        receita: Math.max(1, vendas) * faker.number.int({ min: 8000, max: 25000 }) // Receita baseada em vendas
       });
     }
+    
     return data;
   }
 
   // Gerar performance por canal
   generateChannelPerformance() {
+    const totalContacts = faker.number.int({ min: 200, max: 500 });
+    
+    // Distribuir percentuais de forma realista
+    const whatsappPerc = faker.number.int({ min: 35, max: 50 });
+    const instagramPerc = faker.number.int({ min: 20, max: 35 });
+    const emailPerc = faker.number.int({ min: 15, max: 25 });
+    const websitePerc = 100 - whatsappPerc - instagramPerc - emailPerc;
+    
     return [
       {
         channel: 'WhatsApp',
         messages: faker.number.int({ min: 100, max: 500 }),
-        contacts: faker.number.int({ min: 50, max: 200 }),
+        contacts: Math.floor(totalContacts * whatsappPerc / 100),
         conversions: faker.number.int({ min: 10, max: 50 }),
-        percentage: 45
+        percentage: whatsappPerc
       },
       {
         channel: 'Instagram',
         messages: faker.number.int({ min: 50, max: 300 }),
-        contacts: faker.number.int({ min: 30, max: 150 }),
+        contacts: Math.floor(totalContacts * instagramPerc / 100),
         conversions: faker.number.int({ min: 5, max: 30 }),
-        percentage: 30
+        percentage: instagramPerc
       },
       {
         channel: 'Email',
         messages: faker.number.int({ min: 30, max: 200 }),
-        contacts: faker.number.int({ min: 20, max: 100 }),
+        contacts: Math.floor(totalContacts * emailPerc / 100),
         conversions: faker.number.int({ min: 3, max: 20 }),
-        percentage: 25
+        percentage: emailPerc
+      },
+      {
+        channel: 'Website',
+        messages: faker.number.int({ min: 20, max: 150 }),
+        contacts: Math.floor(totalContacts * websitePerc / 100),
+        conversions: faker.number.int({ min: 2, max: 15 }),
+        percentage: websitePerc
       }
     ];
   }
@@ -288,6 +322,11 @@ class MockDataService {
     conversation.ultima_mensagem_em = new Date().toISOString();
     conversation.nao_lidas = (conversation.nao_lidas || 0) + 1;
     
+    // Atualizar dados de performance (adicionar uma conversa ao dia atual)
+    if (this.mockData.performanceData.length > 0) {
+      this.mockData.performanceData[this.mockData.performanceData.length - 1].conversas++;
+    }
+    
     // Notificar listeners
     this.notify('new-message', { conversation, message: newMessage });
     
@@ -326,6 +365,11 @@ class MockDataService {
     // Atualizar KPIs
     this.mockData.kpis.novosLeads++;
     
+    // Atualizar dados de performance (adicionar um lead ao dia atual)
+    if (this.mockData.performanceData.length > 0) {
+      this.mockData.performanceData[this.mockData.performanceData.length - 1].leads++;
+    }
+    
     // Notificar
     this.notify('new-lead', { contact: newContact, deal: newDeal });
     
@@ -350,9 +394,16 @@ class MockDataService {
         const oldStage = deal.stage;
         deal.stage = newStage;
         
-        // Se ganhou, atualizar KPIs
+        // Se ganhou, atualizar KPIs e performance
         if (newStage === 'won') {
           this.mockData.kpis.taxaConversao = Math.min(100, this.mockData.kpis.taxaConversao + 2);
+          
+          // Atualizar vendas no dia atual
+          if (this.mockData.performanceData.length > 0) {
+            const hoje = this.mockData.performanceData[this.mockData.performanceData.length - 1];
+            hoje.vendas++;
+            hoje.receita += deal.value;
+          }
         }
         
         // Notificar
@@ -469,6 +520,9 @@ class MockDataService {
     this.isRunning = true;
     console.log('🎬 Demo iniciada!');
     
+    // Regenerar dados de performance para garantir dados frescos
+    this.mockData.performanceData = this.generatePerformanceData();
+    
     // Simular nova mensagem a cada 5-15 segundos
     this.intervals.push(
       setInterval(() => {
@@ -520,6 +574,23 @@ class MockDataService {
         
         this.notify('kpis-updated', this.mockData.kpis);
       }, 8000)
+    );
+    
+    // Atualizar dados de performance periodicamente
+    this.intervals.push(
+      setInterval(() => {
+        // Adicionar pequenas variações aos dados do dia atual
+        if (this.mockData.performanceData.length > 0) {
+          const hoje = this.mockData.performanceData[this.mockData.performanceData.length - 1];
+          if (Math.random() > 0.5) hoje.conversas += faker.number.int({ min: 1, max: 3 });
+          if (Math.random() > 0.6) hoje.leads += faker.number.int({ min: 0, max: 2 });
+          if (Math.random() > 0.8) {
+            hoje.vendas += 1;
+            hoje.receita += faker.number.int({ min: 5000, max: 20000 });
+          }
+        }
+        this.notify('performance-updated', this.mockData.performanceData);
+      }, 10000)
     );
   }
 
@@ -582,8 +653,13 @@ class MockDataService {
     return this.mockData.kpis;
   }
 
+  // CORRIGIDO: Retornar dados de performance com valores reais
   getPerformanceData() {
-    return this.generatePerformanceData();
+    // Se não tiver dados, gerar novos
+    if (!this.mockData.performanceData || this.mockData.performanceData.length === 0) {
+      this.mockData.performanceData = this.generatePerformanceData();
+    }
+    return this.mockData.performanceData;
   }
 
   getChannelPerformance() {
