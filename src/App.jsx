@@ -17,6 +17,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import AutomationSettings from './pages/AutomationSettings';
 import QRCodeIntegration from './pages/QRCodeIntegration';
+import WhatsAppBotConfig from './pages/WhatsAppBotConfig';
 
 function App() {
   return (
@@ -44,6 +45,7 @@ function App() {
               <Route path="settings" element={<Settings />} />
               <Route path="automation" element={<AutomationSettings />} />
               <Route path="qrcode" element={<QRCodeIntegration />} />
+              <Route path="bot-config" element={<WhatsAppBotConfig />} />
             </Route>
           </Routes>
           <DemoControl /> {/* ADICIONAR */}
