@@ -1,41 +1,196 @@
 // src/pages/QRCodeIntegration.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   QrCode, MessageCircle, CheckCircle, AlertCircle, 
   RefreshCw, Smartphone, Link2, Shield, Zap,
-  Info, X, ArrowRight
+  Info, X, ArrowRight, Power
 } from 'lucide-react';
 
 const QRCodeIntegration = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [showInstructions, setShowInstructions] = useState(true);
+  const [qrCode, setQrCode] = useState(null);
+  const [error, setError] = useState(null);
+  const [statusMessage, setStatusMessage] = useState('');
+  const pollingInterval = useRef(null);
   
-  // Simular geração de QR Code
-  const [qrCodeUrl, setQrCodeUrl] = useState('https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=VICO_CRM_WHATSAPP_INTEGRATION_DEMO');
+  useEffect(() => {
+    checkStatus();
+    return () => {
+      if (pollingInterval.current) {
+        clearInterval(pollingInterval.current);
+      }
+    };
+  }, []);
 
-  const handleRefreshQR = () => {
-    setIsLoading(true);
-    // Simular refresh do QR Code
-    setTimeout(() => {
-      setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=VICO_CRM_WHATSAPP_${Date.now()}`);
-      setIsLoading(false);
-    }, 1000);
+  const checkStatus = async () => {
+    try {
+      const token = localStorage.getItem('maya-token') || localStorage.getItem('token');
+      const response = await fetch('http://localhost:3001/api/whatsapp/status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Erro ao verificar status');
+      }
+      
+      const data = await response.json();
+      
+      if (data.connected) {
+        setIsConnected(true);
+        setQrCode(null);
+        stopPolling();
+      } else if (data.qrCode || data.hasQR) {
+        // Se já tem QR, buscar ele
+        fetchQRCode();
+      }
+    } catch (error) {
+      console.error('Erro ao verificar status:', error);
+    }
   };
 
-  // Simular verificação de conexão
-  useEffect(() => {
-    const checkConnection = setInterval(() => {
-      // TODO: Verificar status real da conexão
-      // Esta é apenas uma simulação
-    }, 5000);
+  const startPolling = () => {
+    // Para polling existente se houver
+    stopPolling();
+    
+    // Busca QR imediatamente
+    fetchQRCode();
+    
+    // Depois continua buscando a cada 2 segundos
+    pollingInterval.current = setInterval(() => {
+      fetchQRCode();
+    }, 2000);
+  };
 
-    return () => clearInterval(checkConnection);
-  }, []);
+  const stopPolling = () => {
+    if (pollingInterval.current) {
+      clearInterval(pollingInterval.current);
+      pollingInterval.current = null;
+    }
+  };
+
+  const initializeWhatsApp = async () => {
+    setIsLoading(true);
+    setError(null);
+    setStatusMessage('Inicializando WhatsApp...');
+    
+    try {
+      const token = localStorage.getItem('maya-token') || localStorage.getItem('token');
+      
+      const response = await fetch('http://localhost:3001/api/whatsapp/initialize', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Erro ao inicializar WhatsApp');
+      }
+      
+      setStatusMessage('Gerando QR Code...');
+      
+      // Inicia o polling para buscar o QR
+      setTimeout(() => {
+        startPolling();
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Erro ao inicializar:', error);
+      setError('Erro ao inicializar WhatsApp. Verifique se o servidor está rodando.');
+      setIsLoading(false);
+    }
+  };
+
+  const fetchQRCode = async () => {
+    try {
+      const token = localStorage.getItem('maya-token') || localStorage.getItem('token');
+      
+      const response = await fetch('http://localhost:3001/api/whatsapp/qr', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        // Se não encontrar QR, continua tentando
+        console.log('QR ainda não disponível, tentando novamente...');
+        return;
+      }
+      
+      const data = await response.json();
+      
+      if (data.qr) {
+        // QR encontrado!
+        setQrCode(data.qr);
+        setIsConnected(false);
+        setStatusMessage('');
+        setIsLoading(false);
+        console.log('QR Code recebido com sucesso!');
+      } else if (data.connected) {
+        // WhatsApp conectado
+        setIsConnected(true);
+        setQrCode(null);
+        setIsLoading(false);
+        stopPolling();
+      } else if (data.qrCode) {
+        // Formato alternativo de resposta
+        setQrCode(data.qrCode);
+        setIsConnected(false);
+        setStatusMessage('');
+        setIsLoading(false);
+      }
+      
+    } catch (error) {
+      console.error('Erro ao buscar QR:', error);
+      // Não para o loading aqui, deixa continuar tentando
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      const token = localStorage.getItem('maya-token') || localStorage.getItem('token');
+      await fetch('http://localhost:3001/api/whatsapp/disconnect', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      setIsConnected(false);
+      setQrCode(null);
+      stopPolling();
+    } catch (error) {
+      console.error('Erro ao desconectar:', error);
+    }
+  };
+
+  const handleRefreshQR = () => {
+    setQrCode(null);
+    initializeWhatsApp();
+  };
+
+  // Verifica se o QR code é uma string base64 válida
+  const getQRCodeSrc = () => {
+    if (!qrCode) return null;
+    
+    // Se já vier com data:image, usa direto
+    if (qrCode.startsWith('data:image')) {
+      return qrCode;
+    }
+    
+    // Se for só base64, adiciona o prefixo
+    return `data:image/png;base64,${qrCode}`;
+  };
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
@@ -60,61 +215,75 @@ const QRCodeIntegration = () => {
 
       <div className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto">
-          {/* Instructions Alert */}
-          {showInstructions && !isConnected && (
-            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 relative">
-              <button
-                onClick={() => setShowInstructions(false)}
-                className="absolute top-4 right-4 text-blue-600 hover:text-blue-800"
-              >
-                <X size={20} />
-              </button>
-              <div className="flex items-start space-x-3">
-                <Info className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
-                <div className="text-sm text-blue-800">
-                  <p className="font-medium mb-1">Como funciona a integração:</p>
-                  <ol className="list-decimal list-inside space-y-1 text-blue-700">
-                    <li>Abra o WhatsApp no seu celular</li>
-                    <li>Vá em Configurações → Aparelhos conectados</li>
-                    <li>Clique em "Conectar um aparelho"</li>
-                    <li>Escaneie o QR Code abaixo</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-          )}
-
           <div className="grid lg:grid-cols-2 gap-8">
-            {/* QR Code Section */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
               <div className="text-center">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">
-                  {isConnected ? 'WhatsApp Conectado' : 'Escaneie o QR Code'}
-                </h2>
-
-                {!isConnected ? (
+                {!isConnected && !qrCode && !isLoading && (
                   <>
+                    <div className="mb-8">
+                      <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <QrCode className="w-10 h-10 text-gray-400" />
+                      </div>
+                      <h2 className="text-xl font-bold text-gray-900 mb-2">
+                        WhatsApp Desconectado
+                      </h2>
+                      <p className="text-gray-600">
+                        Clique no botão abaixo para conectar seu WhatsApp
+                      </p>
+                    </div>
+                    
+                    <button
+                      onClick={initializeWhatsApp}
+                      className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 mx-auto"
+                    >
+                      <Power size={20} />
+                      <span>Ativar WhatsApp</span>
+                    </button>
+                  </>
+                )}
+
+                {isLoading && !qrCode && (
+                  <div className="py-12">
+                    <RefreshCw className="w-12 h-12 text-gray-600 animate-spin mx-auto mb-4" />
+                    <p className="text-gray-600">{statusMessage || 'Processando...'}</p>
+                    <p className="text-sm text-gray-500 mt-2">Aguarde, gerando QR Code...</p>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
+                      <p className="text-red-800">{error}</p>
+                    </div>
+                  </div>
+                )}
+
+                {qrCode && !isConnected && (
+                  <>
+                    <h2 className="text-xl font-bold text-gray-900 mb-6">
+                      Escaneie o QR Code
+                    </h2>
+                    
                     <div className="relative inline-block">
-                      {isLoading && (
-                        <div className="absolute inset-0 bg-white/80 flex items-center justify-center rounded-xl">
-                          <RefreshCw className="animate-spin text-gray-600" size={32} />
-                        </div>
-                      )}
                       <div className="p-6 bg-gray-50 rounded-xl">
                         <img 
-                          src={qrCodeUrl} 
+                          src={getQRCodeSrc()} 
                           alt="QR Code WhatsApp" 
                           className="w-64 h-64"
+                          onError={(e) => {
+                            console.error('Erro ao carregar imagem QR');
+                            e.target.style.display = 'none';
+                          }}
                         />
                       </div>
                     </div>
                     
                     <button
                       onClick={handleRefreshQR}
-                      disabled={isLoading}
                       className="mt-6 flex items-center justify-center space-x-2 mx-auto text-gray-600 hover:text-gray-900 transition-colors"
                     >
-                      <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+                      <RefreshCw size={18} />
                       <span className="text-sm">Gerar novo QR Code</span>
                     </button>
 
@@ -123,15 +292,23 @@ const QRCodeIntegration = () => {
                       <span>Conexão segura e criptografada</span>
                     </div>
                   </>
-                ) : (
+                )}
+
+                {isConnected && (
                   <div className="py-12">
                     <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                       <CheckCircle className="w-12 h-12 text-green-600" />
                     </div>
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">
+                      WhatsApp Conectado
+                    </h2>
                     <p className="text-gray-600 mb-6">
-                      Seu WhatsApp está conectado e sincronizado com o Vico CRM
+                      Seu WhatsApp está conectado e sincronizado com o ZapVibe
                     </p>
-                    <button className="text-red-600 hover:text-red-700 text-sm font-medium">
+                    <button 
+                      onClick={handleDisconnect}
+                      className="text-red-600 hover:text-red-700 text-sm font-medium"
+                    >
                       Desconectar WhatsApp
                     </button>
                   </div>
@@ -139,64 +316,39 @@ const QRCodeIntegration = () => {
               </div>
             </div>
 
-            {/* Benefits Section */}
             <div className="space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
                 <h3 className="font-bold text-gray-900 mb-4">
-                  Benefícios da Integração
+                  Como conectar
                 </h3>
-                <div className="space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <MessageCircle className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Mensagens Centralizadas</h4>
-                      <p className="text-sm text-gray-600">
-                        Receba e responda mensagens do WhatsApp sem sair do CRM
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Zap className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Respostas Automáticas</h4>
-                      <p className="text-sm text-gray-600">
-                        Configure chatbots para atender clientes 24/7
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-3">
-                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Link2 className="w-5 h-5 text-purple-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Histórico Completo</h4>
-                      <p className="text-sm text-gray-600">
-                        Todas as conversas salvas e organizadas por lead
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-3">
-                    <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Smartphone className="w-5 h-5 text-orange-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Multi-dispositivos</h4>
-                      <p className="text-sm text-gray-600">
-                        Sua equipe pode atender do computador ou celular
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                <ol className="space-y-3 text-sm text-gray-600">
+                  <li className="flex">
+                    <span className="font-medium text-gray-900 mr-2">1.</span>
+                    Clique no botão "Ativar WhatsApp"
+                  </li>
+                  <li className="flex">
+                    <span className="font-medium text-gray-900 mr-2">2.</span>
+                    Aguarde o QR Code ser gerado
+                  </li>
+                  <li className="flex">
+                    <span className="font-medium text-gray-900 mr-2">3.</span>
+                    Abra o WhatsApp no seu celular
+                  </li>
+                  <li className="flex">
+                    <span className="font-medium text-gray-900 mr-2">4.</span>
+                    Vá em Configurações → Aparelhos conectados
+                  </li>
+                  <li className="flex">
+                    <span className="font-medium text-gray-900 mr-2">5.</span>
+                    Clique em "Conectar um aparelho"
+                  </li>
+                  <li className="flex">
+                    <span className="font-medium text-gray-900 mr-2">6.</span>
+                    Escaneie o QR Code exibido na tela
+                  </li>
+                </ol>
               </div>
 
-              {/* Status Card */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
                 <h3 className="font-bold text-gray-900 mb-4">
                   Status da Conexão
@@ -209,28 +361,24 @@ const QRCodeIntegration = () => {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Última sincronização</span>
+                    <span className="text-sm text-gray-600">Status</span>
                     <span className="text-sm text-gray-900">
-                      {isConnected ? 'Há 2 minutos' : '-'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Mensagens hoje</span>
-                    <span className="text-sm text-gray-900">
-                      {isConnected ? '47' : '-'}
+                      {isConnected ? 'Ativo' : qrCode ? 'Aguardando Leitura' : 'Inativo'}
                     </span>
                   </div>
                 </div>
 
                 {isConnected && (
-                  <button className="mt-4 w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2">
+                  <button 
+                    onClick={() => window.location.href = '/conversations'}
+                    className="mt-4 w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2"
+                  >
                     <span>Ir para Mensagens</span>
                     <ArrowRight size={18} />
                   </button>
                 )}
               </div>
 
-              {/* Warning */}
               {!isConnected && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                   <div className="flex items-start space-x-3">
@@ -240,7 +388,7 @@ const QRCodeIntegration = () => {
                       <ul className="list-disc list-inside space-y-1 text-amber-700">
                         <li>Mantenha seu celular conectado à internet</li>
                         <li>Não desconecte o WhatsApp Web do celular</li>
-                        <li>Use preferencialmente o WhatsApp Business</li>
+                        <li>O QR Code expira em 1 minuto</li>
                       </ul>
                     </div>
                   </div>
